@@ -126,6 +126,22 @@ const TwinPage = {
     this.simulationRequestId++;
     container.innerHTML = this.render();
     this.setupControls();
+
+    // Fetch real-time synoptic observation for initial location (Perundurai)
+    if (this.selectedLocation && typeof WeatherAPI !== 'undefined') {
+      WeatherAPI.getCurrent(this.selectedLocation.lat, this.selectedLocation.lon).then(w => {
+        if (w && !w.error) {
+          this.selectedLocation.liveWeather = w;
+          if (this.activeTab === 'location') this.updateLocationTelemetryAndRisks();
+        }
+      });
+      WeatherAPI.getAQI(this.selectedLocation.lat, this.selectedLocation.lon).then(a => {
+        if (a && !a.error) {
+          this.selectedLocation.liveAQI = a;
+        }
+      });
+    }
+
     if (this.activeTab === 'national') {
       this.renderMap();
     } else {
@@ -1029,7 +1045,7 @@ const TwinPage = {
     }
   },
 
-  selectLocation(loc) {
+  async selectLocation(loc) {
     this.selectedLocation = loc;
 
     document.querySelectorAll('.loc-preset-pill[data-loc-name]').forEach(btn => {
@@ -1056,6 +1072,21 @@ const TwinPage = {
 
     if (typeof Components !== 'undefined') {
       Components.showToast(`Climate Twin focused on ${loc.name} (${loc.lat.toFixed(2)}°N, ${loc.lon.toFixed(2)}°E)`, 'info');
+    }
+
+    // Live Open-Meteo Synoptic Telemetry Fetch
+    if (typeof WeatherAPI !== 'undefined') {
+      try {
+        const [w, a] = await Promise.all([
+          WeatherAPI.getCurrent(loc.lat, loc.lon),
+          WeatherAPI.getAQI(loc.lat, loc.lon),
+        ]);
+        if (w && !w.error) loc.liveWeather = w;
+        if (a && !a.error) loc.liveAQI = a;
+        this.updateLocationTelemetryAndRisks();
+      } catch (err) {
+        console.warn('Live location telemetry fetch error:', err);
+      }
     }
   },
 
@@ -1204,29 +1235,55 @@ const TwinPage = {
       isSurrogate = true;
     }
 
-    // Climatological reference baselines if surrogate data not yet generated
+    // Real live observation baseline if surrogate data not yet generated
+    const liveW = this.selectedLocation.liveWeather;
+    const isLiveObs = Boolean(liveW && Number.isFinite(liveW.temp));
+
     if (tempC === null) {
-      const baseTemp = this.selectedLocation.name === 'Perundurai' ? 28.2 : 27.8;
+      const baseTemp = isLiveObs ? liveW.temp : (this.selectedLocation.name === 'Perundurai' ? 28.2 : 27.8);
       tempC = baseTemp + (this.oceanHeat * 0.45) - ((this.greenspace - 50) * 0.02) + (this.carbonForcing - 2.6) * 0.4;
     }
     if (rainMm === null) {
-      const baseRain = this.selectedLocation.name === 'Perundurai' ? 14.0 : 18.0;
-      rainMm = Math.max(1, baseRain + (this.oceanHeat * 3.8) + ((this.greenspace - 50) * 0.08) - (this.iodIndex * 2.5));
+      const baseRain = isLiveObs ? (liveW.rainfall !== undefined ? liveW.rainfall : (liveW.rain ? 12.0 : 0.0)) : (this.selectedLocation.name === 'Perundurai' ? 14.0 : 18.0);
+      rainMm = Math.max(0, baseRain + (this.oceanHeat * 3.8) + ((this.greenspace - 50) * 0.08) - (this.iodIndex * 2.5));
     }
-    if (humidity === null) humidity = 14.2 + (this.oceanHeat * 0.8);
-    if (windKmh === null) windKmh = 15.2 - (this.aerosol * 0.04);
-    if (pressure === null) pressure = 982.0 + ((100 - this.greenspace) * 0.05);
-    if (soilMoisture === null) soilMoisture = Math.min(85, Math.max(10, 38.0 + (rainMm * 0.8) - ((tempC - 28) * 1.5)));
-    if (solarRadiation === null) solarRadiation = Math.min(950, Math.max(150, 560.0 - (this.aerosol * 1.2) - (rainMm * 3.0)));
-    if (cloudCover === null) cloudCover = Math.min(95, Math.max(5, 20.0 + (rainMm * 1.8)));
-    if (vpd === null) vpd = Math.max(0.1, 0.65 + ((tempC - 28) * 0.08) - (humidity * 0.02));
+    if (humidity === null) {
+      const baseHum = isLiveObs ? ((liveW.humidity || 65) * 0.18) : 14.2;
+      humidity = Math.max(2.0, baseHum + (this.oceanHeat * 0.8));
+    }
+    if (windKmh === null) {
+      const baseWind = isLiveObs ? (liveW.wind || 14.0) : 15.2;
+      windKmh = Math.max(1.0, baseWind - (this.aerosol * 0.04));
+    }
+    if (pressure === null) {
+      const basePress = isLiveObs ? (liveW.pressure || 1010.0) : 982.0;
+      pressure = basePress + ((100 - this.greenspace) * 0.05);
+    }
+    if (cloudCover === null) {
+      const baseCloud = isLiveObs ? (liveW.cloudCover !== undefined ? liveW.cloudCover : (liveW.rain ? 80 : 35)) : 20.0;
+      cloudCover = Math.min(100, Math.max(0, baseCloud + (rainMm * 1.5)));
+    }
+    if (soilMoisture === null) {
+      const liveHumVal = isLiveObs ? (liveW.humidity || 65) : 65;
+      soilMoisture = Math.min(95, Math.max(5, 25.0 + (liveHumVal * 0.3) + (rainMm * 0.8) - ((tempC - 28) * 1.2)));
+    }
+    if (solarRadiation === null) {
+      solarRadiation = Math.min(980, Math.max(120, 680.0 - (cloudCover * 4.5) - (this.aerosol * 1.5)));
+    }
+    if (vpd === null) {
+      // Physical Magnus-Tetens vapor pressure deficit formulation (kPa)
+      const es = 0.61078 * Math.exp((17.27 * tempC) / (tempC + 237.3));
+      const rhPct = isLiveObs ? (liveW.humidity || 65) : Math.min(95, Math.max(20, (humidity / 22.0) * 100));
+      const ea = es * (rhPct / 100.0);
+      vpd = Math.max(0.05, Math.round((es - ea) * 100) / 100);
+    }
 
-    return { tempC, rainMm, humidity, windKmh, pressure, soilMoisture, solarRadiation, cloudCover, vpd, isSurrogate };
+    return { tempC, rainMm, humidity, windKmh, pressure, soilMoisture, solarRadiation, cloudCover, vpd, isSurrogate, isLiveObs };
   },
 
   updateLocationTelemetryAndRisks() {
     const loc = this.selectedLocation;
-    const { tempC, rainMm, humidity, windKmh, pressure, soilMoisture, solarRadiation, cloudCover, vpd, isSurrogate } = this.extractLocationMetrics(loc.lat, loc.lon);
+    const { tempC, rainMm, humidity, windKmh, pressure, soilMoisture, solarRadiation, cloudCover, vpd, isSurrogate, isLiveObs } = this.extractLocationMetrics(loc.lat, loc.lon);
 
     // Update telemetry elements
     const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
@@ -1250,11 +1307,19 @@ const TwinPage = {
 
     const badgeSource = document.getElementById('loc-data-source-badge');
     if (badgeSource) {
-      badgeSource.textContent = isSurrogate
-        ? `PINN Surrogate Active (Run ${this.successfulSimulationCount})`
-        : 'Baseline Reference (Run Sim to Update)';
-      badgeSource.style.color = isSurrogate ? 'var(--accent-green)' : '#ffab00';
-      badgeSource.style.borderColor = isSurrogate ? 'rgba(0,229,168,0.4)' : 'rgba(255,171,0,0.4)';
+      if (isSurrogate) {
+        badgeSource.textContent = `PINN Surrogate Active (Run ${this.successfulSimulationCount})`;
+        badgeSource.style.color = 'var(--accent-green)';
+        badgeSource.style.borderColor = 'rgba(0,229,168,0.4)';
+      } else if (isLiveObs && loc.liveWeather) {
+        badgeSource.textContent = `🟢 Live Synoptic Observation Active (${loc.liveWeather.temp}°C, ${loc.liveWeather.condition})`;
+        badgeSource.style.color = '#00E5A8';
+        badgeSource.style.borderColor = 'rgba(0,229,168,0.5)';
+      } else {
+        badgeSource.textContent = 'Baseline Reference (Connecting Live Feed...)';
+        badgeSource.style.color = '#ffab00';
+        badgeSource.style.borderColor = 'rgba(255,171,0,0.4)';
+      }
     }
 
     // Risk computations

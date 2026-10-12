@@ -825,6 +825,46 @@ const LocationData = {
     });
 
     return nearest;
+  },
+
+  /* Synchronize states with live weather telemetry from Open-Meteo feeds */
+  syncLiveWeather(results) {
+    if (!results || !Array.isArray(results)) return;
+
+    const cityToState = {
+      'Perundurai': 'Tamil Nadu',
+      'Chennai': 'Tamil Nadu',
+      'New Delhi': 'Delhi',
+      'Mumbai': 'Maharashtra',
+      'Bengaluru': 'Karnataka',
+      'Kolkata': 'West Bengal',
+      'Hyderabad': 'Telangana',
+      'Ahmedabad': 'Gujarat',
+      'Jaipur': 'Rajasthan',
+      'Guwahati': 'Assam',
+      'Thiruvanantha.': 'Kerala',
+      'Kochi': 'Kerala',
+      'Shimla': 'Himachal Pradesh',
+      'Pune': 'Maharashtra',
+      'Bhubaneswar': 'Odisha',
+      'Patna': 'Bihar',
+      'Lucknow': 'Uttar Pradesh',
+      'Dehradun': 'Uttarakhand',
+      'Srinagar': 'Jammu & Kashmir',
+    };
+
+    results.forEach(w => {
+      if (!w || w.error || !w.name) return;
+      const stateName = cityToState[w.name];
+      if (stateName && this.states[stateName]) {
+        if (Number.isFinite(w.temp)) this.states[stateName].temp = Math.round(w.temp);
+        if (Number.isFinite(w.humidity)) this.states[stateName].humidity = Math.round(w.humidity);
+        if (w.rain !== undefined) this.states[stateName].rain = Boolean(w.rain);
+        if (w.condition) this.states[stateName].condition = w.condition;
+        if (Number.isFinite(w.wind)) this.states[stateName].wind = Math.round(w.wind);
+        if (Number.isFinite(w.rainfall)) this.states[stateName].rainfall_24h = Math.round(w.rainfall);
+      }
+    });
   }
 };
 
