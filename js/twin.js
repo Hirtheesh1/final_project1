@@ -1,6 +1,6 @@
 /* =================================================================
    Climate Twin Operator Console Page Logic
-   Dual Tab System:
+   Dual Tab System with Multi-Variable Earth Observation & Advanced Scenarios
    Tab 1: National Scenario Twin (60×60 PINN-FFNO Subcontinent Grid)
    Tab 2: Location Twin Predictor (Dedicated Microclimate & Local Risk)
    ================================================================= */
@@ -15,6 +15,10 @@ const TwinPage = {
   oceanHeat: 1.2,
   greenspace: 90,
   aerosol: 30,
+  iodIndex: 0.0,
+  urbanization: 35,
+  carbonForcing: 2.6,
+  activeScenarioPreset: 'baseline',
   showTerrain: true,
   simulationRequestId: 0,
   successfulSimulationCount: 0,
@@ -105,6 +109,17 @@ const TwinPage = {
     },
   ],
 
+  scenarioPresets: [
+    { key: 'baseline', name: 'SSP2-4.5 Baseline', color: '#00C2FF', desc: 'Current Trajectory', oceanHeat: 1.2, greenspace: 90, aerosol: 30, iodIndex: 0.0, urbanization: 35, carbonForcing: 2.6, physicsWeight: 0.75 },
+    { key: 'paris', name: '+1.5°C Paris Goal', color: '#00E5A8', desc: 'COP Stabilization', oceanHeat: 0.6, greenspace: 95, aerosol: 20, iodIndex: 0.2, urbanization: 30, carbonForcing: 1.5, physicsWeight: 0.85 },
+    { key: 'el_nino', name: 'Super El Niño', color: '#FF5252', desc: 'Positive IOD & Heatwave', oceanHeat: 3.2, greenspace: 60, aerosol: 45, iodIndex: 2.2, urbanization: 65, carbonForcing: 4.2, physicsWeight: 0.80 },
+    { key: 'la_nina', name: 'Intense La Niña Surge', color: '#A855F7', desc: 'Monsoon Cloudburst Flood', oceanHeat: 2.0, greenspace: 85, aerosol: 30, iodIndex: -1.8, urbanization: 40, carbonForcing: 2.8, physicsWeight: 0.78 },
+    { key: 'industrial', name: 'High Fossil SSP5', color: '#FFA726', desc: 'Urban Sprawl & Inversion', oceanHeat: 2.8, greenspace: 45, aerosol: 85, iodIndex: 0.8, urbanization: 90, carbonForcing: 5.8, physicsWeight: 0.70 },
+    { key: 'net_zero', name: 'Green Net-Zero (COP30)', color: '#10B981', desc: 'Afforestation & Clean Sky', oceanHeat: 0.5, greenspace: 100, aerosol: 15, iodIndex: -0.2, urbanization: 20, carbonForcing: 1.2, physicsWeight: 0.90 },
+    { key: 'drought', name: 'Deccan Megadrought', color: '#E11D48', desc: 'High VPD & Soil Aridity', oceanHeat: 2.6, greenspace: 40, aerosol: 50, iodIndex: 1.9, urbanization: 60, carbonForcing: 3.9, physicsWeight: 0.82 },
+    { key: 'cyclone', name: 'Super-Cyclone Season', color: '#3B82F6', desc: 'Coastal Ocean Heat Surge', oceanHeat: 3.4, greenspace: 75, aerosol: 35, iodIndex: 1.1, urbanization: 50, carbonForcing: 4.5, physicsWeight: 0.85 },
+  ],
+
   init() {
     const container = document.getElementById('page-twin');
     if (!container) return;
@@ -126,11 +141,18 @@ const TwinPage = {
     }).join('');
     const selectedMonthLabel = new Intl.DateTimeFormat('en', { month: 'short' }).format(new Date(2025, this.simulationMonth - 1, 1));
     const mapLayerOptions = Object.entries(IndiaMap.modelLayers).map(([key, layer]) =>
-      `<option value="${key}" ${key === this.activeLayer ? 'selected' : ''}>${layer.label}</option>`
+      `<option value="${key}" ${key === this.activeLayer ? 'selected' : ''}>${layer.label} (${layer.unit})</option>`
     ).join('');
     const locLayerOptions = Object.entries(IndiaMap.modelLayers).map(([key, layer]) =>
-      `<option value="${key}" ${key === this.locationActiveLayer ? 'selected' : ''}>${layer.label}</option>`
+      `<option value="${key}" ${key === this.locationActiveLayer ? 'selected' : ''}>${layer.label} (${layer.unit})</option>`
     ).join('');
+
+    const renderPresetChips = () => this.scenarioPresets.map(preset => `
+      <button type="button" class="scenario-preset-chip ${this.activeScenarioPreset === preset.key ? 'active' : ''}" data-preset="${preset.key}">
+        <span class="chip-dot" style="background:${preset.color}"></span>
+        <span>${preset.name}</span>
+      </button>
+    `).join('');
 
     return `
       <div class="twin-page">
@@ -157,7 +179,7 @@ const TwinPage = {
         </div>
 
         <!-- ════════════════════════════════════════════════════════════
-             TAB 1: NATIONAL SCENARIO TWIN (ORIGINAL CONSOLE)
+             TAB 1: NATIONAL SCENARIO TWIN (EXPANDED CONSOLE)
              ════════════════════════════════════════════════════════════ -->
         <div id="twin-tab-national" class="twin-tab-pane ${this.activeTab === 'national' ? 'active' : ''}">
           <div class="twin-layout">
@@ -196,10 +218,10 @@ const TwinPage = {
               <div class="twin-sim-overlay" id="twin-sim-overlay">
                 <div class="twin-spinner"></div>
                 <div style="font-weight: 700; color: var(--accent-cyan); font-size: var(--text-base); letter-spacing: 1px;">
-                  SOLVING PINN-FFNO FLUID EQUATIONS...
+                  SOLVING PINN-FFNO FLUID & CLIMATE EQUATIONS...
                 </div>
                 <div style="font-size: var(--text-xs); color: var(--text-muted);">
-                  Surrogate Navier-Stokes Loss Minimization Active
+                  Navier-Stokes, Soil Hydrology & Atmospheric Radiation Coupled
                 </div>
               </div>
             </div>
@@ -223,8 +245,16 @@ const TwinPage = {
                   <span class="twin-metric-val" id="twin-period-status">${this.simulationYear} / ${selectedMonthLabel}</span>
                 </div>
                 <div class="twin-metric-row">
-                  <span class="twin-metric-lbl">Input Baseline:</span>
-                  <span class="twin-metric-val" style="font-size:9px">Synthetic scenario model</span>
+                  <span class="twin-metric-lbl">Active Scenario:</span>
+                  <span class="twin-metric-val" id="twin-scenario-status" style="color:var(--accent-cyan)">${this.scenarioPresets.find(p => p.key === this.activeScenarioPreset)?.name || 'Custom'}</span>
+                </div>
+              </div>
+
+              <!-- Scenario Presets Bar -->
+              <div class="twin-section-box">
+                <div class="twin-section-hdr">Scenario Presets & Pathways</div>
+                <div class="twin-scenario-presets-bar">
+                  ${renderPresetChips()}
                 </div>
               </div>
 
@@ -238,40 +268,21 @@ const TwinPage = {
                 </div>
               </div>
 
-              <!-- Surrogate Parameters -->
-              <div class="twin-section-box">
-                <div class="twin-section-hdr">Surrogate Model Parameters</div>
-                
-                <!-- Physics Weight -->
-                <div class="twin-slider-group">
-                  <div class="twin-slider-hdr">
-                    <span>Physics Weight (PINN)</span>
-                    <span class="twin-slider-val" id="val-physics-weight">${this.physicsWeight.toFixed(2)}</span>
-                  </div>
-                  <input type="range" class="twin-range-input" id="range-physics-weight" min="0.0" max="1.0" step="0.05" value="${this.physicsWeight}" />
-                </div>
-
-                <div class="twin-metric-row" style="margin-top: 4px;">
-                  <span class="twin-metric-lbl">Navier-Stokes Constraint:</span>
-                  <span class="twin-metric-val" style="color: var(--accent-green)">ACTIVE</span>
-                </div>
-              </div>
-
               <!-- Scenario Simulator Sliders -->
               <div class="twin-section-box">
-                <div class="twin-section-hdr">Scenario Simulator (What-If Analysis)</div>
+                <div class="twin-section-hdr">Scenario Forcing Parameters</div>
 
                 <!-- Ocean Heat Content -->
                 <div class="twin-slider-group">
                   <div class="twin-slider-hdr">
-                    <span>Indian Ocean Heat Content</span>
+                    <span>Indian Ocean Heat Content (IOHC)</span>
                     <span class="twin-slider-val" id="val-ocean-heat">+${this.oceanHeat.toFixed(1)}°C</span>
                   </div>
                   <input type="range" class="twin-range-input" id="range-ocean-heat" min="-1.0" max="4.0" step="0.1" value="${this.oceanHeat}" />
                 </div>
 
                 <!-- Greenspace Index -->
-                <div class="twin-slider-group" style="margin-top: 8px;">
+                <div class="twin-slider-group">
                   <div class="twin-slider-hdr">
                     <span>Greenspace Index (NDVI)</span>
                     <span class="twin-slider-val" id="val-greenspace">${this.greenspace}%</span>
@@ -280,12 +291,48 @@ const TwinPage = {
                 </div>
 
                 <!-- Aerosol Load -->
-                <div class="twin-slider-group" style="margin-top: 8px;">
+                <div class="twin-slider-group">
                   <div class="twin-slider-hdr">
-                    <span>Aerosol Load</span>
+                    <span>Aerosol Load (AOD)</span>
                     <span class="twin-slider-val" id="val-aerosol">Medium (${this.aerosol}%)</span>
                   </div>
                   <input type="range" class="twin-range-input" id="range-aerosol" min="10" max="100" step="5" value="${this.aerosol}" />
+                </div>
+
+                <!-- ENSO / IOD Index -->
+                <div class="twin-slider-group">
+                  <div class="twin-slider-hdr">
+                    <span>ENSO / Indian Ocean Dipole (IOD)</span>
+                    <span class="twin-slider-val" id="val-iod">${(this.iodIndex >= 0 ? '+' : '') + this.iodIndex.toFixed(1)}</span>
+                  </div>
+                  <input type="range" class="twin-range-input" id="range-iod" min="-2.0" max="2.5" step="0.1" value="${this.iodIndex}" />
+                </div>
+
+                <!-- Urbanization Rate -->
+                <div class="twin-slider-group">
+                  <div class="twin-slider-hdr">
+                    <span>Urban Heat Island & Sprawl</span>
+                    <span class="twin-slider-val" id="val-urbanization">${this.urbanization}%</span>
+                  </div>
+                  <input type="range" class="twin-range-input" id="range-urbanization" min="10" max="100" step="5" value="${this.urbanization}" />
+                </div>
+
+                <!-- Carbon Forcing -->
+                <div class="twin-slider-group">
+                  <div class="twin-slider-hdr">
+                    <span>GHG Radiative Forcing (ΔF)</span>
+                    <span class="twin-slider-val" id="val-carbon">${this.carbonForcing.toFixed(1)} W/m²</span>
+                  </div>
+                  <input type="range" class="twin-range-input" id="range-carbon" min="1.0" max="6.5" step="0.1" value="${this.carbonForcing}" />
+                </div>
+
+                <!-- Physics Weight -->
+                <div class="twin-slider-group" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(0,194,255,0.1);">
+                  <div class="twin-slider-hdr">
+                    <span>Physics Weight (PINN Navier-Stokes)</span>
+                    <span class="twin-slider-val" id="val-physics-weight">${this.physicsWeight.toFixed(2)}</span>
+                  </div>
+                  <input type="range" class="twin-range-input" id="range-physics-weight" min="0.0" max="1.0" step="0.05" value="${this.physicsWeight}" />
                 </div>
               </div>
 
@@ -300,11 +347,11 @@ const TwinPage = {
                   <span class="twin-btn-subtext" style="color: rgba(0,194,255,0.6);">Download Results</span>
                 </button>
               </div>
-              <div class="twin-run-status" id="twin-run-status" role="status">Select a month and year, then run the surrogate model.</div>
+              <div class="twin-run-status" id="twin-run-status" role="status">Select scenario and parameters, then run the surrogate model.</div>
 
-              <!-- Analysis & Key Insights -->
+              <!-- Analysis & Multi-Variable Key Insights -->
               <div class="twin-section-box" style="gap: 4px;">
-                <div class="twin-section-hdr">Analysis & Key Insights</div>
+                <div class="twin-section-hdr">Multi-Variable Analysis & Key Insights</div>
                 <div class="twin-metric-row">
                   <span class="twin-metric-lbl">Ensemble Spread:</span>
                   <span class="twin-metric-val" id="insight-accuracy">—</span>
@@ -328,6 +375,22 @@ const TwinPage = {
                 <div class="twin-metric-row">
                   <span class="twin-metric-lbl">Mean Rainfall:</span>
                   <span class="twin-metric-val" id="insight-rainfall">—</span>
+                </div>
+                <div class="twin-metric-row">
+                  <span class="twin-metric-lbl">Mean Soil Moisture:</span>
+                  <span class="twin-metric-val" id="insight-soil-moisture" style="color:#00E5A8">—</span>
+                </div>
+                <div class="twin-metric-row">
+                  <span class="twin-metric-lbl">Mean Solar Irradiance:</span>
+                  <span class="twin-metric-val" id="insight-solar-radiation" style="color:#FFB300">—</span>
+                </div>
+                <div class="twin-metric-row">
+                  <span class="twin-metric-lbl">Mean Cloud Cover:</span>
+                  <span class="twin-metric-val" id="insight-cloud-cover" style="color:#60A5FA">—</span>
+                </div>
+                <div class="twin-metric-row">
+                  <span class="twin-metric-lbl">Mean Vapor Pressure Deficit:</span>
+                  <span class="twin-metric-val" id="insight-vpd" style="color:#F87171">—</span>
                 </div>
                 <div class="twin-metric-row">
                   <span class="twin-metric-lbl">Mean Specific Humidity:</span>
@@ -390,7 +453,7 @@ const TwinPage = {
           <!-- Location Digital Twin Layout -->
           <div class="twin-loc-layout">
             <!-- Left Side: Local Spatial Focus & FNO Cell Telemetry -->
-            <div class="twin-map-card" style="min-height: 640px; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; padding: 0;">
+            <div class="twin-map-card" style="min-height: 680px; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; padding: 0;">
               <div class="twin-map-title-badge" style="z-index: 12;" id="loc-map-badge">
                 📍 Location Spatial Twin · ${this.selectedLocation.name.toUpperCase()}
               </div>
@@ -409,10 +472,10 @@ const TwinPage = {
               </div>
 
               <!-- Interactive Location SVG Map Container -->
-              <div id="twin-loc-map" style="width: 100%; height: 380px; display: flex; align-items: center; justify-content: center; position: relative;"></div>
+              <div id="twin-loc-map" style="width: 100%; height: 360px; display: flex; align-items: center; justify-content: center; position: relative;"></div>
 
               <!-- Map Legend Bar -->
-              <div class="twin-map-legend-box" style="position: relative; bottom: auto; left: auto; margin: 4px 14px 10px; width: auto;">
+              <div class="twin-map-legend-box" style="position: relative; bottom: auto; left: auto; margin: 4px 14px 8px; width: auto;">
                 <div class="twin-legend-title" id="twin-loc-legend-title">Surrogate Model Spatial Field Gradient</div>
                 <div class="twin-legend-gradient-bar" id="twin-loc-legend-gradient"></div>
                 <div class="twin-legend-labels">
@@ -422,59 +485,69 @@ const TwinPage = {
                 </div>
               </div>
 
-              <!-- Physical Surrogate Grid Cell Telemetry (Extracted from 60x60 Tensor) -->
+              <!-- Physical Surrogate Grid Cell Telemetry (Extracted from 60x60 Tensor across all variables) -->
               <div style="padding: 10px 14px 16px; border-top: 1px solid rgba(0, 194, 255, 0.15); background: rgba(5, 8, 20, 0.4);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
                   <span style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted)">
-                    PINN-FFNO Local Grid Telemetry (Extracted at ${this.selectedLocation.lat.toFixed(2)}°N, ${this.selectedLocation.lon.toFixed(2)}°E)
+                    PINN Local Grid Telemetry (${this.selectedLocation.name} · ${this.selectedLocation.lat.toFixed(2)}°N, ${this.selectedLocation.lon.toFixed(2)}°E)
                   </span>
                   <span style="font-size:9px; color:var(--accent-green); background:rgba(0,229,168,0.15); border:1px solid rgba(0,229,168,0.3); padding:2px 6px; border-radius:4px;" id="loc-data-source-badge">
                     ${this.lastSimulationData ? 'PINN Surrogate Active' : 'Baseline Reference'}
                   </span>
                 </div>
 
+                <!-- 9-Variable High-Density Grid Telemetry Cards -->
                 <div class="twin-loc-telemetry-grid">
                   <div class="loc-telemetry-card">
-                    <div class="loc-telemetry-hdr">
-                      <span>Surface Temp</span>
-                      <span>🌡️</span>
-                    </div>
+                    <div class="loc-telemetry-hdr"><span>Surface Temp</span><span>🌡️</span></div>
                     <div class="loc-telemetry-val" id="loc-tel-temp">28.4°C</div>
-                    <div class="loc-telemetry-sub" id="loc-tel-temp-sub">+0.6°C vs 30yr Normal</div>
+                    <div class="loc-telemetry-sub" id="loc-tel-temp-sub">+0.6°C vs Normal</div>
                   </div>
 
                   <div class="loc-telemetry-card">
-                    <div class="loc-telemetry-hdr">
-                      <span>Precipitation</span>
-                      <span>🌧️</span>
-                    </div>
+                    <div class="loc-telemetry-hdr"><span>Precipitation</span><span>🌧️</span></div>
                     <div class="loc-telemetry-val" id="loc-tel-rain">14.2 mm</div>
                     <div class="loc-telemetry-sub" id="loc-tel-rain-sub">Rate: 0.6 mm/hr</div>
                   </div>
 
                   <div class="loc-telemetry-card">
-                    <div class="loc-telemetry-hdr">
-                      <span>Spec. Humidity</span>
-                      <span>💧</span>
-                    </div>
+                    <div class="loc-telemetry-hdr"><span>Soil Moisture</span><span>🌱</span></div>
+                    <div class="loc-telemetry-val" id="loc-tel-soil" style="color: #00E5A8;">42.5%</div>
+                    <div class="loc-telemetry-sub" id="loc-tel-soil-sub">Volumetric Capacity</div>
+                  </div>
+
+                  <div class="loc-telemetry-card">
+                    <div class="loc-telemetry-hdr"><span>Solar Radiation</span><span>☀️</span></div>
+                    <div class="loc-telemetry-val" id="loc-tel-solar" style="color: #FFB300;">540 W/m²</div>
+                    <div class="loc-telemetry-sub" id="loc-tel-solar-sub">Shortwave Irradiance</div>
+                  </div>
+
+                  <div class="loc-telemetry-card">
+                    <div class="loc-telemetry-hdr"><span>Cloud Cover</span><span>☁️</span></div>
+                    <div class="loc-telemetry-val" id="loc-tel-cloud" style="color: #60A5FA;">45.0%</div>
+                    <div class="loc-telemetry-sub" id="loc-tel-cloud-sub">Satellite Albedo</div>
+                  </div>
+
+                  <div class="loc-telemetry-card">
+                    <div class="loc-telemetry-hdr"><span>Vapor Deficit</span><span>🌫️</span></div>
+                    <div class="loc-telemetry-val" id="loc-tel-vpd" style="color: #F87171;">0.85 kPa</div>
+                    <div class="loc-telemetry-sub" id="loc-tel-vpd-sub">Atmospheric Aridity</div>
+                  </div>
+
+                  <div class="loc-telemetry-card">
+                    <div class="loc-telemetry-hdr"><span>Spec. Humidity</span><span>💧</span></div>
                     <div class="loc-telemetry-val" id="loc-tel-humidity">14.8 g/kg</div>
                     <div class="loc-telemetry-sub" id="loc-tel-humidity-sub">RH: ~74%</div>
                   </div>
 
                   <div class="loc-telemetry-card">
-                    <div class="loc-telemetry-hdr">
-                      <span>Wind Velocity</span>
-                      <span>💨</span>
-                    </div>
+                    <div class="loc-telemetry-hdr"><span>Wind Velocity</span><span>💨</span></div>
                     <div class="loc-telemetry-val" id="loc-tel-wind">15.2 km/h</div>
                     <div class="loc-telemetry-sub" id="loc-tel-wind-sub">Palakkad Flow</div>
                   </div>
 
                   <div class="loc-telemetry-card">
-                    <div class="loc-telemetry-hdr">
-                      <span>Surface Press.</span>
-                      <span>⏲️</span>
-                    </div>
+                    <div class="loc-telemetry-hdr"><span>Surface Press.</span><span>⏲️</span></div>
                     <div class="loc-telemetry-val" id="loc-tel-press">982 hPa</div>
                     <div class="loc-telemetry-sub" id="loc-tel-press-sub">Elevation: ~290m</div>
                   </div>
@@ -488,7 +561,7 @@ const TwinPage = {
                   EXTRACTING LOCAL PINN-FFNO TENSOR STATE...
                 </div>
                 <div style="font-size: var(--text-xs); color: var(--text-muted);">
-                  Navier-Stokes Microclimate & Thermal Inversion Modeling
+                  Navier-Stokes Microclimate & Multi-Variable Boundary Flux Modeling
                 </div>
               </div>
             </div>
@@ -498,6 +571,14 @@ const TwinPage = {
               <div class="twin-console-title" style="display:flex; justify-content:space-between; align-items:center;">
                 <span>Location Climate Digital Twin</span>
                 <span style="font-size:10px; color:var(--accent-cyan); font-family:monospace;">📍 ${this.selectedLocation.name.toUpperCase()}</span>
+              </div>
+
+              <!-- Location Scenario Presets -->
+              <div class="twin-section-box">
+                <div class="twin-section-hdr">Scenario Presets & Pathways</div>
+                <div class="twin-scenario-presets-bar">
+                  ${renderPresetChips()}
+                </div>
               </div>
 
               <!-- Location Scenario Forcing Sliders -->
@@ -531,11 +612,29 @@ const TwinPage = {
                   <input type="range" class="twin-range-input" id="range-loc-aerosol" min="10" max="100" step="5" value="${this.aerosol}" />
                 </div>
 
+                <!-- IOD -->
+                <div class="twin-slider-group">
+                  <div class="twin-slider-hdr">
+                    <span>ENSO / Indian Ocean Dipole</span>
+                    <span class="twin-slider-val" id="val-loc-iod">${(this.iodIndex >= 0 ? '+' : '') + this.iodIndex.toFixed(1)}</span>
+                  </div>
+                  <input type="range" class="twin-range-input" id="range-loc-iod" min="-2.0" max="2.5" step="0.1" value="${this.iodIndex}" />
+                </div>
+
+                <!-- Urbanization -->
+                <div class="twin-slider-group">
+                  <div class="twin-slider-hdr">
+                    <span>Urban Heat Island Rate</span>
+                    <span class="twin-slider-val" id="val-loc-urbanization">${this.urbanization}%</span>
+                  </div>
+                  <input type="range" class="twin-range-input" id="range-loc-urbanization" min="10" max="100" step="5" value="${this.urbanization}" />
+                </div>
+
                 <!-- Action Button -->
                 <div style="margin-top: 6px; display: flex; gap: 8px;">
                   <button class="twin-run-btn" id="btn-run-loc-simulation" style="flex: 1; padding: 10px 14px;">
                     ⚡ Run Location Twin Simulation
-                    <span class="twin-btn-subtext">Predict Local State for ${this.selectedLocation.name}</span>
+                    <span class="twin-btn-subtext">Predict Multi-Variable State for ${this.selectedLocation.name}</span>
                   </button>
                   <button class="twin-run-btn" id="btn-export-loc-report" style="background: rgba(0,194,255,0.1); border-color: rgba(0,194,255,0.4); color: #00C2FF; padding: 10px 14px;">
                     Export
@@ -646,14 +745,18 @@ const TwinPage = {
     // ── Dual Tab Switching ──
     const btnTabNational = document.getElementById('btn-tab-national');
     const btnTabLocation = document.getElementById('btn-tab-location');
-    if (btnTabNational) {
-      btnTabNational.addEventListener('click', () => this.switchTab('national'));
-    }
-    if (btnTabLocation) {
-      btnTabLocation.addEventListener('click', () => this.switchTab('location'));
-    }
+    if (btnTabNational) btnTabNational.addEventListener('click', () => this.switchTab('national'));
+    if (btnTabLocation) btnTabLocation.addEventListener('click', () => this.switchTab('location'));
 
-    // ── National Tab Controls (Original) ──
+    // ── Scenario Presets Chips ──
+    document.querySelectorAll('.scenario-preset-chip').forEach(chip => {
+      chip.addEventListener('click', (e) => {
+        const key = e.currentTarget.getAttribute('data-preset');
+        this.applyScenarioPreset(key);
+      });
+    });
+
+    // ── National Tab Controls ──
     const mapLayerSelect = document.getElementById('twin-map-layer-select');
     if (mapLayerSelect) {
       mapLayerSelect.addEventListener('change', event => {
@@ -681,49 +784,50 @@ const TwinPage = {
     }
 
     // Sliders
-    const rangePhysics = document.getElementById('range-physics-weight');
-    const valPhysics = document.getElementById('val-physics-weight');
-    if (rangePhysics && valPhysics) {
-      rangePhysics.addEventListener('input', (e) => {
-        this.physicsWeight = parseFloat(e.target.value);
-        valPhysics.textContent = this.physicsWeight.toFixed(2);
-      });
-    }
+    this.bindRangeInput('range-physics-weight', 'val-physics-weight', (val) => {
+      this.physicsWeight = parseFloat(val);
+      return this.physicsWeight.toFixed(2);
+    });
 
-    const rangeOcean = document.getElementById('range-ocean-heat');
-    const valOcean = document.getElementById('val-ocean-heat');
-    if (rangeOcean && valOcean) {
-      rangeOcean.addEventListener('input', (e) => {
-        this.oceanHeat = parseFloat(e.target.value);
-        valOcean.textContent = (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C';
-        this.syncLocationSliders();
-      });
-    }
+    this.bindRangeInput('range-ocean-heat', 'val-ocean-heat', (val) => {
+      this.oceanHeat = parseFloat(val);
+      this.syncLocationSliders();
+      return (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C';
+    });
 
-    const rangeGreenspace = document.getElementById('range-greenspace');
-    const valGreenspace = document.getElementById('val-greenspace');
-    if (rangeGreenspace && valGreenspace) {
-      rangeGreenspace.addEventListener('input', (e) => {
-        this.greenspace = parseInt(e.target.value);
-        valGreenspace.textContent = `${this.greenspace}%`;
-        this.syncLocationSliders();
-      });
-    }
+    this.bindRangeInput('range-greenspace', 'val-greenspace', (val) => {
+      this.greenspace = parseInt(val);
+      this.syncLocationSliders();
+      return `${this.greenspace}%`;
+    });
 
-    const rangeAerosol = document.getElementById('range-aerosol');
-    const valAerosol = document.getElementById('val-aerosol');
-    if (rangeAerosol && valAerosol) {
-      rangeAerosol.addEventListener('input', (e) => {
-        this.aerosol = parseInt(e.target.value);
-        let category = 'Low';
-        if (this.aerosol > 70) category = 'High';
-        else if (this.aerosol > 40) category = 'Medium';
-        valAerosol.textContent = `${category} (${this.aerosol}%)`;
-        this.syncLocationSliders();
-      });
-    }
+    this.bindRangeInput('range-aerosol', 'val-aerosol', (val) => {
+      this.aerosol = parseInt(val);
+      this.syncLocationSliders();
+      let category = 'Low';
+      if (this.aerosol > 70) category = 'High';
+      else if (this.aerosol > 40) category = 'Medium';
+      return `${category} (${this.aerosol}%)`;
+    });
 
-    // Checkboxes
+    this.bindRangeInput('range-iod', 'val-iod', (val) => {
+      this.iodIndex = parseFloat(val);
+      this.syncLocationSliders();
+      return (this.iodIndex >= 0 ? '+' : '') + this.iodIndex.toFixed(1);
+    });
+
+    this.bindRangeInput('range-urbanization', 'val-urbanization', (val) => {
+      this.urbanization = parseInt(val);
+      this.syncLocationSliders();
+      return `${this.urbanization}%`;
+    });
+
+    this.bindRangeInput('range-carbon', 'val-carbon', (val) => {
+      this.carbonForcing = parseFloat(val);
+      return `${this.carbonForcing.toFixed(1)} W/m²`;
+    });
+
+    // Checkbox Terrain
     const chkTerrain = document.getElementById('chk-terrain');
     if (chkTerrain) {
       chkTerrain.addEventListener('change', (e) => {
@@ -737,20 +841,14 @@ const TwinPage = {
       });
     }
 
-    // Run Button (National)
+    // Run Buttons
     const btnRun = document.getElementById('btn-run-simulation');
-    if (btnRun) {
-      btnRun.addEventListener('click', () => this.runSimulation(false));
-    }
+    if (btnRun) btnRun.addEventListener('click', () => this.runSimulation(false));
 
-    // Export Button (National)
     const btnExport = document.getElementById('btn-export-report');
-    if (btnExport) {
-      btnExport.addEventListener('click', () => this.exportReport());
-    }
+    if (btnExport) btnExport.addEventListener('click', () => this.exportReport());
 
     // ── Location Tab Controls ──
-    // Preset Location Pills
     document.querySelectorAll('.loc-preset-pill[data-loc-name]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const locName = e.currentTarget.getAttribute('data-loc-name');
@@ -759,13 +857,9 @@ const TwinPage = {
       });
     });
 
-    // GPS Button
     const btnGps = document.getElementById('btn-loc-gps');
-    if (btnGps) {
-      btnGps.addEventListener('click', () => this.detectLocationGPS());
-    }
+    if (btnGps) btnGps.addEventListener('click', () => this.detectLocationGPS());
 
-    // Location Map Layer Select
     const locLayerSelect = document.getElementById('twin-loc-layer-select');
     if (locLayerSelect) {
       locLayerSelect.addEventListener('change', (e) => {
@@ -774,7 +868,6 @@ const TwinPage = {
       });
     }
 
-    // Location Map Terrain Toggle
     const chkLocTerrain = document.getElementById('chk-loc-terrain');
     if (chkLocTerrain) {
       chkLocTerrain.addEventListener('change', (e) => {
@@ -783,94 +876,136 @@ const TwinPage = {
       });
     }
 
-    // Location Sliders
-    const rangeLocOcean = document.getElementById('range-loc-ocean-heat');
-    const valLocOcean = document.getElementById('val-loc-ocean-heat');
-    if (rangeLocOcean && valLocOcean) {
-      rangeLocOcean.addEventListener('input', (e) => {
-        this.oceanHeat = parseFloat(e.target.value);
-        valLocOcean.textContent = (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C';
-        this.syncNationalSliders();
-      });
-    }
+    // Location sliders
+    this.bindRangeInput('range-loc-ocean-heat', 'val-loc-ocean-heat', (val) => {
+      this.oceanHeat = parseFloat(val);
+      this.syncNationalSliders();
+      return (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C';
+    });
 
-    const rangeLocGreenspace = document.getElementById('range-loc-greenspace');
-    const valLocGreenspace = document.getElementById('val-loc-greenspace');
-    if (rangeLocGreenspace && valLocGreenspace) {
-      rangeLocGreenspace.addEventListener('input', (e) => {
-        this.greenspace = parseInt(e.target.value);
-        valLocGreenspace.textContent = `${this.greenspace}%`;
-        this.syncNationalSliders();
-      });
-    }
+    this.bindRangeInput('range-loc-greenspace', 'val-loc-greenspace', (val) => {
+      this.greenspace = parseInt(val);
+      this.syncNationalSliders();
+      return `${this.greenspace}%`;
+    });
 
-    const rangeLocAerosol = document.getElementById('range-loc-aerosol');
-    const valLocAerosol = document.getElementById('val-loc-aerosol');
-    if (rangeLocAerosol && valLocAerosol) {
-      rangeLocAerosol.addEventListener('input', (e) => {
-        this.aerosol = parseInt(e.target.value);
-        valLocAerosol.textContent = `${this.aerosol}%`;
-        this.syncNationalSliders();
-      });
-    }
+    this.bindRangeInput('range-loc-aerosol', 'val-loc-aerosol', (val) => {
+      this.aerosol = parseInt(val);
+      this.syncNationalSliders();
+      return `${this.aerosol}%`;
+    });
 
-    // Run Button (Location Tab)
+    this.bindRangeInput('range-loc-iod', 'val-loc-iod', (val) => {
+      this.iodIndex = parseFloat(val);
+      this.syncNationalSliders();
+      return (this.iodIndex >= 0 ? '+' : '') + this.iodIndex.toFixed(1);
+    });
+
+    this.bindRangeInput('range-loc-urbanization', 'val-loc-urbanization', (val) => {
+      this.urbanization = parseInt(val);
+      this.syncNationalSliders();
+      return `${this.urbanization}%`;
+    });
+
     const btnRunLoc = document.getElementById('btn-run-loc-simulation');
-    if (btnRunLoc) {
-      btnRunLoc.addEventListener('click', () => this.runSimulation(true));
-    }
+    if (btnRunLoc) btnRunLoc.addEventListener('click', () => this.runSimulation(true));
 
-    // Export Button (Location Tab)
     const btnExportLoc = document.getElementById('btn-export-loc-report');
-    if (btnExportLoc) {
-      btnExportLoc.addEventListener('click', () => this.exportLocationReport());
+    if (btnExportLoc) btnExportLoc.addEventListener('click', () => this.exportLocationReport());
+  },
+
+  bindRangeInput(inputId, outputId, callback) {
+    const input = document.getElementById(inputId);
+    const output = document.getElementById(outputId);
+    if (input && output) {
+      input.addEventListener('input', (e) => {
+        output.textContent = callback(e.target.value);
+      });
+    }
+  },
+
+  applyScenarioPreset(presetKey) {
+    const preset = this.scenarioPresets.find(p => p.key === presetKey);
+    if (!preset) return;
+    this.activeScenarioPreset = presetKey;
+    this.oceanHeat = preset.oceanHeat;
+    this.greenspace = preset.greenspace;
+    this.aerosol = preset.aerosol;
+    this.iodIndex = preset.iodIndex;
+    this.urbanization = preset.urbanization;
+    this.carbonForcing = preset.carbonForcing;
+    this.physicsWeight = preset.physicsWeight;
+
+    // Update active preset buttons
+    document.querySelectorAll('.scenario-preset-chip').forEach(chip => {
+      chip.classList.toggle('active', chip.getAttribute('data-preset') === presetKey);
+    });
+
+    const scenarioStatus = document.getElementById('twin-scenario-status');
+    if (scenarioStatus) scenarioStatus.textContent = preset.name;
+
+    // Sync all slider displays
+    this.syncNationalSliders();
+    this.syncLocationSliders();
+
+    if (typeof Components !== 'undefined') {
+      Components.showToast(`Applied scenario preset: ${preset.name} (${preset.desc})`, 'info');
     }
   },
 
   syncLocationSliders() {
-    const valLocOcean = document.getElementById('val-loc-ocean-heat');
-    const rangeLocOcean = document.getElementById('range-loc-ocean-heat');
-    if (valLocOcean) valLocOcean.textContent = (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C';
-    if (rangeLocOcean) rangeLocOcean.value = this.oceanHeat;
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
-    const valLocGreenspace = document.getElementById('val-loc-greenspace');
-    const rangeLocGreenspace = document.getElementById('range-loc-greenspace');
-    if (valLocGreenspace) valLocGreenspace.textContent = `${this.greenspace}%`;
-    if (rangeLocGreenspace) rangeLocGreenspace.value = this.greenspace;
+    setVal('range-loc-ocean-heat', this.oceanHeat);
+    setText('val-loc-ocean-heat', (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C');
 
-    const valLocAerosol = document.getElementById('val-loc-aerosol');
-    const rangeLocAerosol = document.getElementById('range-loc-aerosol');
-    if (valLocAerosol) valLocAerosol.textContent = `${this.aerosol}%`;
-    if (rangeLocAerosol) rangeLocAerosol.value = this.aerosol;
+    setVal('range-loc-greenspace', this.greenspace);
+    setText('val-loc-greenspace', `${this.greenspace}%`);
+
+    setVal('range-loc-aerosol', this.aerosol);
+    setText('val-loc-aerosol', `${this.aerosol}%`);
+
+    setVal('range-loc-iod', this.iodIndex);
+    setText('val-loc-iod', (this.iodIndex >= 0 ? '+' : '') + this.iodIndex.toFixed(1));
+
+    setVal('range-loc-urbanization', this.urbanization);
+    setText('val-loc-urbanization', `${this.urbanization}%`);
   },
 
   syncNationalSliders() {
-    const valOcean = document.getElementById('val-ocean-heat');
-    const rangeOcean = document.getElementById('range-ocean-heat');
-    if (valOcean) valOcean.textContent = (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C';
-    if (rangeOcean) rangeOcean.value = this.oceanHeat;
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    const setText = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
-    const valGreenspace = document.getElementById('val-greenspace');
-    const rangeGreenspace = document.getElementById('range-greenspace');
-    if (valGreenspace) valGreenspace.textContent = `${this.greenspace}%`;
-    if (rangeGreenspace) rangeGreenspace.value = this.greenspace;
+    setVal('range-ocean-heat', this.oceanHeat);
+    setText('val-ocean-heat', (this.oceanHeat >= 0 ? '+' : '') + this.oceanHeat.toFixed(1) + '°C');
 
-    const valAerosol = document.getElementById('val-aerosol');
-    const rangeAerosol = document.getElementById('range-aerosol');
-    if (valAerosol) {
-      let category = 'Low';
-      if (this.aerosol > 70) category = 'High';
-      else if (this.aerosol > 40) category = 'Medium';
-      valAerosol.textContent = `${category} (${this.aerosol}%)`;
-    }
-    if (rangeAerosol) rangeAerosol.value = this.aerosol;
+    setVal('range-greenspace', this.greenspace);
+    setText('val-greenspace', `${this.greenspace}%`);
+
+    setVal('range-aerosol', this.aerosol);
+    let category = 'Low';
+    if (this.aerosol > 70) category = 'High';
+    else if (this.aerosol > 40) category = 'Medium';
+    setText('val-aerosol', `${category} (${this.aerosol}%)`);
+
+    setVal('range-iod', this.iodIndex);
+    setText('val-iod', (this.iodIndex >= 0 ? '+' : '') + this.iodIndex.toFixed(1));
+
+    setVal('range-urbanization', this.urbanization);
+    setText('val-urbanization', `${this.urbanization}%`);
+
+    setVal('range-carbon', this.carbonForcing);
+    setText('val-carbon', `${this.carbonForcing.toFixed(1)} W/m²`);
+
+    setVal('range-physics-weight', this.physicsWeight);
+    setText('val-physics-weight', this.physicsWeight.toFixed(2));
   },
 
   switchTab(tab) {
     if (this.activeTab === tab) return;
     this.activeTab = tab;
 
-    // Toggle button active classes
     const btnTabNational = document.getElementById('btn-tab-national');
     const btnTabLocation = document.getElementById('btn-tab-location');
     if (btnTabNational) {
@@ -882,13 +1017,11 @@ const TwinPage = {
       btnTabLocation.setAttribute('aria-selected', tab === 'location');
     }
 
-    // Toggle panes
     const paneNational = document.getElementById('twin-tab-national');
     const paneLocation = document.getElementById('twin-tab-location');
     if (paneNational) paneNational.classList.toggle('active', tab === 'national');
     if (paneLocation) paneLocation.classList.toggle('active', tab === 'location');
 
-    // Trigger map rendering in appropriate pane
     if (tab === 'national') {
       this.renderMap();
     } else {
@@ -899,13 +1032,10 @@ const TwinPage = {
   selectLocation(loc) {
     this.selectedLocation = loc;
 
-    // Update preset pills active state
     document.querySelectorAll('.loc-preset-pill[data-loc-name]').forEach(btn => {
-      const isSelected = btn.getAttribute('data-loc-name') === loc.name;
-      btn.classList.toggle('active', isSelected);
+      btn.classList.toggle('active', btn.getAttribute('data-loc-name') === loc.name);
     });
 
-    // Update dossier
     const nameEl = document.getElementById('loc-dossier-name');
     const coordsEl = document.getElementById('loc-dossier-coords');
     const gridEl = document.getElementById('loc-dossier-grid');
@@ -921,7 +1051,6 @@ const TwinPage = {
     if (zoneEl) zoneEl.textContent = loc.zone || 'Regional Microclimate';
     if (badgeEl) badgeEl.textContent = `📍 Location Spatial Twin · ${loc.name.toUpperCase()}`;
 
-    // Re-render location map and calculate metrics
     this.renderLocationMap();
     this.updateLocationTelemetryAndRisks();
 
@@ -952,7 +1081,6 @@ const TwinPage = {
           gpsBtn.style.opacity = '1';
         }
 
-        // Try to reverse geocode
         let placeName = 'Live GPS Location';
         let district = 'Local District';
         let state = 'India';
@@ -1036,7 +1164,7 @@ const TwinPage = {
     });
     const label = document.getElementById('twin-loc-legend-title');
     if (label) {
-      const layerName = IndiaMap.modelLayers[layer].label;
+      const layerName = IndiaMap.modelLayers[layer]?.label || layer;
       label.textContent = this.lastSimulationData
         ? `PINN Modelled ${layerName} · ${this.lastSimulationData.metadata.simulation_period} · Run ${this.successfulSimulationCount}`
         : `Spatial ${layerName} Field Gradient (Baseline Climatology)`;
@@ -1050,6 +1178,10 @@ const TwinPage = {
     let humidity = null;
     let windKmh = null;
     let pressure = null;
+    let soilMoisture = null;
+    let solarRadiation = null;
+    let cloudCover = null;
+    let vpd = null;
     let isSurrogate = false;
 
     if (grid && Array.isArray(grid.lats) && Array.isArray(grid.lons)) {
@@ -1065,75 +1197,58 @@ const TwinPage = {
       humidity = grid.specific_humidity_gkg?.[row]?.[col] ?? null;
       windKmh = grid.wind_speed_kmh?.[row]?.[col] ?? null;
       pressure = grid.surface_pressure_hpa?.[row]?.[col] ?? null;
+      soilMoisture = grid.soil_moisture_pct?.[row]?.[col] ?? null;
+      solarRadiation = grid.solar_radiation_wm2?.[row]?.[col] ?? null;
+      cloudCover = grid.cloud_cover_pct?.[row]?.[col] ?? null;
+      vpd = grid.vapor_pressure_deficit_kpa?.[row]?.[col] ?? null;
       isSurrogate = true;
     }
 
     // Climatological reference baselines if surrogate data not yet generated
     if (tempC === null) {
-      // Perundurai baseline: ~28.4°C normal, with ocean heat anomaly impact
       const baseTemp = this.selectedLocation.name === 'Perundurai' ? 28.2 : 27.8;
-      tempC = baseTemp + (this.oceanHeat * 0.45) - ((this.greenspace - 50) * 0.02);
+      tempC = baseTemp + (this.oceanHeat * 0.45) - ((this.greenspace - 50) * 0.02) + (this.carbonForcing - 2.6) * 0.4;
     }
     if (rainMm === null) {
       const baseRain = this.selectedLocation.name === 'Perundurai' ? 14.0 : 18.0;
-      rainMm = Math.max(1, baseRain + (this.oceanHeat * 3.8) + ((this.greenspace - 50) * 0.08));
+      rainMm = Math.max(1, baseRain + (this.oceanHeat * 3.8) + ((this.greenspace - 50) * 0.08) - (this.iodIndex * 2.5));
     }
-    if (humidity === null) {
-      humidity = 14.2 + (this.oceanHeat * 0.8);
-    }
-    if (windKmh === null) {
-      windKmh = 15.2 - (this.aerosol * 0.04);
-    }
-    if (pressure === null) {
-      pressure = 982.0 + ((100 - this.greenspace) * 0.05);
-    }
+    if (humidity === null) humidity = 14.2 + (this.oceanHeat * 0.8);
+    if (windKmh === null) windKmh = 15.2 - (this.aerosol * 0.04);
+    if (pressure === null) pressure = 982.0 + ((100 - this.greenspace) * 0.05);
+    if (soilMoisture === null) soilMoisture = Math.min(85, Math.max(10, 38.0 + (rainMm * 0.8) - ((tempC - 28) * 1.5)));
+    if (solarRadiation === null) solarRadiation = Math.min(950, Math.max(150, 560.0 - (this.aerosol * 1.2) - (rainMm * 3.0)));
+    if (cloudCover === null) cloudCover = Math.min(95, Math.max(5, 20.0 + (rainMm * 1.8)));
+    if (vpd === null) vpd = Math.max(0.1, 0.65 + ((tempC - 28) * 0.08) - (humidity * 0.02));
 
-    return { tempC, rainMm, humidity, windKmh, pressure, isSurrogate };
+    return { tempC, rainMm, humidity, windKmh, pressure, soilMoisture, solarRadiation, cloudCover, vpd, isSurrogate };
   },
 
   updateLocationTelemetryAndRisks() {
     const loc = this.selectedLocation;
-    const { tempC, rainMm, humidity, windKmh, pressure, isSurrogate } = this.extractLocationMetrics(loc.lat, loc.lon);
+    const { tempC, rainMm, humidity, windKmh, pressure, soilMoisture, solarRadiation, cloudCover, vpd, isSurrogate } = this.extractLocationMetrics(loc.lat, loc.lon);
 
     // Update telemetry elements
-    const telTemp = document.getElementById('loc-tel-temp');
-    const telTempSub = document.getElementById('loc-tel-temp-sub');
-    const telRain = document.getElementById('loc-tel-rain');
-    const telRainSub = document.getElementById('loc-tel-rain-sub');
-    const telHumid = document.getElementById('loc-tel-humidity');
-    const telHumidSub = document.getElementById('loc-tel-humidity-sub');
-    const telWind = document.getElementById('loc-tel-wind');
-    const telWindSub = document.getElementById('loc-tel-wind-sub');
-    const telPress = document.getElementById('loc-tel-press');
-    const telPressSub = document.getElementById('loc-tel-press-sub');
-    const badgeSource = document.getElementById('loc-data-source-badge');
+    const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
 
-    if (telTemp) telTemp.textContent = `${tempC.toFixed(1)}°C`;
+    setText('loc-tel-temp', `${tempC.toFixed(1)}°C`);
+    setText('loc-tel-rain', `${rainMm.toFixed(1)} mm`);
+    setText('loc-tel-soil', `${soilMoisture.toFixed(1)}%`);
+    setText('loc-tel-solar', `${solarRadiation.toFixed(0)} W/m²`);
+    setText('loc-tel-cloud', `${cloudCover.toFixed(1)}%`);
+    setText('loc-tel-vpd', `${vpd.toFixed(2)} kPa`);
+    setText('loc-tel-humidity', `${humidity.toFixed(1)} g/kg`);
+    setText('loc-tel-wind', `${windKmh.toFixed(1)} km/h`);
+    setText('loc-tel-press', `${pressure.toFixed(1)} hPa`);
+
+    const telTempSub = document.getElementById('loc-tel-temp-sub');
     if (telTempSub) {
       const delta = tempC - 28.0;
       telTempSub.textContent = `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}°C vs 30yr Normal`;
       telTempSub.style.color = delta > 1.5 ? 'var(--accent-red)' : delta > 0.5 ? '#ffab00' : 'var(--accent-green)';
     }
 
-    if (telRain) telRain.textContent = `${rainMm.toFixed(1)} mm`;
-    if (telRainSub) telRainSub.textContent = `Rate: ${(rainMm / 24).toFixed(2)} mm/hr`;
-
-    if (telHumid) telHumid.textContent = `${humidity.toFixed(1)} g/kg`;
-    if (telHumidSub) {
-      const rh = Math.min(98, Math.max(20, Math.round((humidity / 20.0) * 100)));
-      telHumidSub.textContent = `Est. RH: ~${rh}%`;
-    }
-
-    if (telWind) telWind.textContent = `${windKmh.toFixed(1)} km/h`;
-    if (telWindSub) {
-      telWindSub.textContent = loc.name === 'Perundurai' ? 'Palakkad Gap Flow' : 'Synoptic Flow';
-    }
-
-    if (telPress) telPress.textContent = `${pressure.toFixed(1)} hPa`;
-    if (telPressSub) {
-      telPressSub.textContent = loc.name === 'Perundurai' ? 'Kongu Basin (~290m)' : 'Standard Hydrostatic';
-    }
-
+    const badgeSource = document.getElementById('loc-data-source-badge');
     if (badgeSource) {
       badgeSource.textContent = isSurrogate
         ? `PINN Surrogate Active (Run ${this.successfulSimulationCount})`
@@ -1142,12 +1257,9 @@ const TwinPage = {
       badgeSource.style.borderColor = isSurrogate ? 'rgba(0,229,168,0.4)' : 'rgba(255,171,0,0.4)';
     }
 
-    // ── Calculate Microclimate Risk Metrics ──
-    // 1. Heat Index & Thermal Discomfort
-    const e_vapor = (humidity * pressure) / (622 + 0.378 * humidity);
-    const heatIndex = tempC + 0.33 * e_vapor - 0.70 * (windKmh / 3.6) - 4.0;
+    // Risk computations
+    const heatIndex = tempC + (vpd > 1.2 ? -1.0 : +2.5) + (humidity * 0.2);
     const heatPercent = Math.min(100, Math.max(10, Math.round(((heatIndex - 20) / 30) * 100)));
-
     const heatLvl = document.getElementById('loc-risk-heat-lvl');
     const heatBar = document.getElementById('loc-risk-heat-bar');
     const heatDesc = document.getElementById('loc-risk-heat-desc');
@@ -1155,24 +1267,20 @@ const TwinPage = {
     if (heatLvl && heatBar && heatDesc) {
       heatBar.style.width = `${heatPercent}%`;
       if (heatIndex >= 38) {
-        heatLvl.className = 'loc-risk-level high';
-        heatLvl.textContent = 'High Caution';
+        heatLvl.className = 'loc-risk-level high'; heatLvl.textContent = 'High Caution';
         heatBar.style.background = 'var(--accent-red)';
         heatDesc.textContent = `Heat index ~${heatIndex.toFixed(1)}°C. High thermal stress; hydration advisory for outdoor agricultural workers.`;
       } else if (heatIndex >= 31) {
-        heatLvl.className = 'loc-risk-level moderate';
-        heatLvl.textContent = 'Moderate';
+        heatLvl.className = 'loc-risk-level moderate'; heatLvl.textContent = 'Moderate';
         heatBar.style.background = '#ffab00';
         heatDesc.textContent = `Heat index ~${heatIndex.toFixed(1)}°C. Moderate microclimate warming observed across local urban footprint.`;
       } else {
-        heatLvl.className = 'loc-risk-level low';
-        heatLvl.textContent = 'Comfortable';
+        heatLvl.className = 'loc-risk-level low'; heatLvl.textContent = 'Comfortable';
         heatBar.style.background = 'var(--accent-green)';
         heatDesc.textContent = `Heat index ~${heatIndex.toFixed(1)}°C. Favorable thermal conditions within seasonal comfort range.`;
       }
     }
 
-    // 2. Flood / Inundation Risk
     const floodPercent = Math.min(100, Math.max(5, Math.round((rainMm / 80) * 100)));
     const floodLvl = document.getElementById('loc-risk-flood-lvl');
     const floodBar = document.getElementById('loc-risk-flood-bar');
@@ -1181,88 +1289,78 @@ const TwinPage = {
     if (floodLvl && floodBar && floodDesc) {
       floodBar.style.width = `${floodPercent}%`;
       if (rainMm >= 50) {
-        floodLvl.className = 'loc-risk-level high';
-        floodLvl.textContent = 'High Risk';
+        floodLvl.className = 'loc-risk-level high'; floodLvl.textContent = 'High Risk';
         floodBar.style.background = 'var(--accent-red)';
         floodDesc.textContent = `${rainMm.toFixed(1)} mm projected. Surface runoff alert for low-lying water bodies and drainage culverts.`;
       } else if (rainMm >= 25) {
-        floodLvl.className = 'loc-risk-level moderate';
-        floodLvl.textContent = 'Moderate';
+        floodLvl.className = 'loc-risk-level moderate'; floodLvl.textContent = 'Moderate';
         floodBar.style.background = '#ffab00';
         floodDesc.textContent = `${rainMm.toFixed(1)} mm rainfall. Moderate flow into Bhavani & Noyyal catchment tributaries.`;
       } else {
-        floodLvl.className = 'loc-risk-level low';
-        floodLvl.textContent = 'Low Risk';
+        floodLvl.className = 'loc-risk-level low'; floodLvl.textContent = 'Low Risk';
         floodBar.style.background = 'var(--accent-green)';
         floodDesc.textContent = `Precipitation (${rainMm.toFixed(1)} mm) well within local drainage & percolation capacity.`;
       }
     }
 
-    // 3. Drought & Aridity
-    const aridityScore = Math.min(100, Math.max(10, Math.round((tempC * 2.2) - (rainMm * 1.5) + (100 - this.greenspace) * 0.3)));
+    // Drought / Aridity from soilMoisture
     const droughtLvl = document.getElementById('loc-risk-drought-lvl');
     const droughtBar = document.getElementById('loc-risk-drought-bar');
     const droughtDesc = document.getElementById('loc-risk-drought-desc');
+    const aridityScore = Math.min(100, Math.max(5, Math.round(100 - soilMoisture)));
 
     if (droughtLvl && droughtBar && droughtDesc) {
       droughtBar.style.width = `${aridityScore}%`;
-      if (aridityScore >= 65) {
-        droughtLvl.className = 'loc-risk-level high';
-        droughtLvl.textContent = 'Elevated';
+      if (soilMoisture < 25) {
+        droughtLvl.className = 'loc-risk-level high'; droughtLvl.textContent = 'High Aridity';
         droughtBar.style.background = 'var(--accent-red)';
-        droughtDesc.textContent = 'High surface evapotranspiration deficit. Supplemental irrigation critical for cash crops.';
-      } else if (aridityScore >= 40) {
-        droughtLvl.className = 'loc-risk-level moderate';
-        droughtLvl.textContent = 'Moderate';
+        droughtDesc.textContent = `Soil moisture critical (${soilMoisture.toFixed(1)}%). Elevated crop water stress in Kongu basin.`;
+      } else if (soilMoisture < 45) {
+        droughtLvl.className = 'loc-risk-level moderate'; droughtLvl.textContent = 'Moderate';
         droughtBar.style.background = '#ffab00';
-        droughtDesc.textContent = 'Balanced moisture levels with slight deficit under high solar irradiance hours.';
+        droughtDesc.textContent = `Soil moisture moderate (${soilMoisture.toFixed(1)}%). Drip irrigation recommended for cash crops.`;
       } else {
-        droughtLvl.className = 'loc-risk-level low';
-        droughtLvl.textContent = 'Optimal';
+        droughtLvl.className = 'loc-risk-level low'; droughtLvl.textContent = 'Optimal';
         droughtBar.style.background = 'var(--accent-green)';
-        droughtDesc.textContent = 'Adequate soil moisture retention across farmlands and vegetation buffer.';
+        droughtDesc.textContent = `Soil moisture optimal (${soilMoisture.toFixed(1)}%). Favorable root hydration across agrarian zone.`;
       }
     }
 
-    // 4. Atmospheric Stagnation & Industrial Air Dispersion
-    const stagnationScore = Math.min(100, Math.max(10, Math.round((35 - windKmh) * 2.8 + (this.aerosol * 0.4))));
     const airLvl = document.getElementById('loc-risk-air-lvl');
     const airBar = document.getElementById('loc-risk-air-bar');
     const airDesc = document.getElementById('loc-risk-air-desc');
+    const stagnationScore = Math.min(100, Math.max(10, Math.round((35 - windKmh) * 2.8 + (this.aerosol * 0.4))));
 
     if (airLvl && airBar && airDesc) {
       airBar.style.width = `${stagnationScore}%`;
       if (windKmh < 9) {
-        airLvl.className = 'loc-risk-level high';
-        airLvl.textContent = 'Stagnant';
+        airLvl.className = 'loc-risk-level high'; airLvl.textContent = 'Stagnant';
         airBar.style.background = 'var(--accent-red)';
         airDesc.textContent = `Low wind velocity (${windKmh.toFixed(1)} km/h) creates boundary inversion trapping particulate matter.`;
       } else if (windKmh < 15) {
-        airLvl.className = 'loc-risk-level moderate';
-        airLvl.textContent = 'Moderate';
+        airLvl.className = 'loc-risk-level moderate'; airLvl.textContent = 'Moderate';
         airBar.style.background = '#ffab00';
         airDesc.textContent = `Steady ${windKmh.toFixed(1)} km/h flow maintains moderate dispersion across the industrial cluster.`;
       } else {
-        airLvl.className = 'loc-risk-level low';
-        airLvl.textContent = 'Optimal';
+        airLvl.className = 'loc-risk-level low'; airLvl.textContent = 'Optimal';
         airBar.style.background = 'var(--accent-green)';
         airDesc.textContent = `Strong ${windKmh.toFixed(1)} km/h ventilation ensures rapid atmospheric dispersion away from town center.`;
       }
     }
 
-    // ── Local Adaptation Advisories ──
+    // Local Advisories
     const advWater = document.getElementById('loc-adv-water');
     const advInd = document.getElementById('loc-adv-industry');
     const advAgri = document.getElementById('loc-adv-agri');
 
     if (loc.name === 'Perundurai') {
       if (advWater) advWater.textContent = 'Bhavani & Lower Bhavani Project (LBP) sub-basins: Channel flow is steady. Percolation ponds in Perundurai and Chennimalai blocks are replenishing regional aquifer storage.';
-      if (advInd) advInd.textContent = 'SIPCOT Industrial Park Environmental Protocol: Atmospheric ventilation index is strong; continuous stack emissions monitoring shows safe lateral dispersion along the Kongu corridor.';
-      if (advAgri) advAgri.textContent = 'Erode Agricultural Extension Advisory: Favorable weather for turmeric curing, sugarcane maturation, and groundnut fields. Maintain evening irrigation to offset midday solar heating.';
+      if (advInd) advInd.textContent = `SIPCOT Industrial Park: Solar flux ${solarRadiation.toFixed(0)} W/m² with ventilation ${windKmh.toFixed(1)} km/h; continuous stack emission monitoring confirms safe lateral dispersion along Kongu highway corridor.`;
+      if (advAgri) advAgri.textContent = `Erode Agricultural Extension Advisory: Soil moisture at ${soilMoisture.toFixed(1)}% supports turmeric curing and sugarcane growth. VPD (${vpd.toFixed(2)} kPa) indicates moderate transpiration loss.`;
     } else {
       if (advWater) advWater.textContent = `Municipal surface reservoirs and storm canals for ${loc.name} are maintaining capacity within projected inflow thresholds.`;
       if (advInd) advInd.textContent = `Urban boundary layer in ${loc.name} is stable with continuous atmospheric flushing under prevailing synoptic winds.`;
-      if (advAgri) advAgri.textContent = `Regional agrarian belt surrounding ${loc.name}: Maintain standard agronomic schedules matched to seasonal moisture levels.`;
+      if (advAgri) advAgri.textContent = `Regional agrarian belt surrounding ${loc.name}: Soil moisture (${soilMoisture.toFixed(1)}%) is consistent with seasonal expectations.`;
     }
   },
 
@@ -1275,7 +1373,7 @@ const TwinPage = {
     if (status) status.textContent = period;
     if (mapLabel) {
       mapLabel.textContent = this.lastSimulationData
-        ? `Modelled ${IndiaMap.modelLayers[this.activeLayer].label.toLowerCase()} · ${this.lastSimulationData.metadata.simulation_period} · Run ${this.successfulSimulationCount}`
+        ? `Modelled ${IndiaMap.modelLayers[this.activeLayer]?.label.toLowerCase() || this.activeLayer} · ${this.lastSimulationData.metadata.simulation_period} · Run ${this.successfulSimulationCount}`
         : `No simulation data · Run a simulation to populate the map (${period})`;
     }
     if (buttonLabel) buttonLabel.textContent = period;
@@ -1307,7 +1405,7 @@ const TwinPage = {
     });
     const label = document.getElementById('twin-map-period-label');
     if (label) {
-      const layerName = IndiaMap.modelLayers[layer].label.toLowerCase();
+      const layerName = IndiaMap.modelLayers[layer]?.label.toLowerCase() || layer;
       label.textContent = this.lastSimulationData
         ? `Modelled ${layerName} · ${this.lastSimulationData.metadata.simulation_period} · Run ${this.successfulSimulationCount}`
         : `No simulation data · Run a simulation to populate the map`;
@@ -1336,6 +1434,9 @@ const TwinPage = {
       ocean_heat_anomaly: this.oceanHeat,
       greenspace_index: this.greenspace,
       aerosol_load: this.aerosol,
+      iod_index: this.iodIndex,
+      urbanization_rate: this.urbanization,
+      carbon_forcing: this.carbonForcing,
     };
     if (exportButton) exportButton.style.display = previousPeriod ? 'flex' : 'none';
     if (status) {
@@ -1349,6 +1450,9 @@ const TwinPage = {
       ocean_heat: String(this.oceanHeat),
       greenspace: String(this.greenspace),
       aerosol: String(this.aerosol),
+      iod_index: String(this.iodIndex),
+      urbanization: String(this.urbanization),
+      carbon_forcing: String(this.carbonForcing),
       year: String(this.simulationYear),
       month: String(this.simulationMonth),
     });
@@ -1419,7 +1523,7 @@ const TwinPage = {
       }
     });
 
-    ['mean_temperature_c', 'mean_rainfall_mm', 'peak_rainfall_mm', 'mean_specific_humidity_gkg', 'mean_wind_speed_kmh', 'mean_surface_pressure_hpa']
+    ['mean_temperature_c', 'mean_rainfall_mm', 'peak_rainfall_mm', 'mean_specific_humidity_gkg', 'mean_wind_speed_kmh', 'mean_surface_pressure_hpa', 'mean_soil_moisture_pct', 'mean_solar_radiation_wm2', 'mean_cloud_cover_pct', 'mean_vapor_pressure_deficit_kpa']
       .forEach(metric => {
         if (!Number.isFinite(data.summary?.[metric])) throw new Error(`Model returned an invalid ${metric.replaceAll('_', ' ')}`);
       });
@@ -1454,6 +1558,10 @@ const TwinPage = {
     };
     setMetric('insight-temperature', data.summary?.mean_temperature_c, '°C');
     setMetric('insight-rainfall', data.summary?.mean_rainfall_mm, 'mm');
+    setMetric('insight-soil-moisture', data.summary?.mean_soil_moisture_pct, '%');
+    setMetric('insight-solar-radiation', data.summary?.mean_solar_radiation_wm2, 'W/m²');
+    setMetric('insight-cloud-cover', data.summary?.mean_cloud_cover_pct, '%');
+    setMetric('insight-vpd', data.summary?.mean_vapor_pressure_deficit_kpa, 'kPa');
     setMetric('insight-humidity', data.summary?.mean_specific_humidity_gkg, 'g/kg');
     setMetric('insight-wind-speed', data.summary?.mean_wind_speed_kmh, 'km/h');
     setMetric('insight-surface-pressure', data.summary?.mean_surface_pressure_hpa, 'hPa');
@@ -1478,9 +1586,7 @@ const TwinPage = {
     }
 
     const btnExport = document.getElementById('btn-export-report');
-    if (btnExport) {
-      btnExport.style.display = 'flex';
-    }
+    if (btnExport) btnExport.style.display = 'flex';
 
     if (typeof Components !== 'undefined') {
       const inferenceTime = data.metadata?.inference_time_seconds ? data.metadata.inference_time_seconds.toFixed(2) : '0.00';
@@ -1499,6 +1605,9 @@ const TwinPage = {
         ocean_heat_anomaly_C: this.oceanHeat,
         greenspace_ndvi_index: this.greenspace,
         aerosol_load: this.aerosol,
+        iod_index: this.iodIndex,
+        urbanization_rate: this.urbanization,
+        carbon_forcing: this.carbonForcing,
         simulation_year: this.simulationYear,
         simulation_month: this.simulationMonth
       },
@@ -1547,11 +1656,18 @@ const TwinPage = {
         physics_weight_pinn: this.physicsWeight,
         ocean_heat_anomaly_C: this.oceanHeat,
         greenspace_index: this.greenspace,
-        aerosol_load: this.aerosol
+        aerosol_load: this.aerosol,
+        iod_index: this.iodIndex,
+        urbanization_rate: this.urbanization,
+        carbon_forcing: this.carbonForcing,
       },
       local_microclimate_metrics: {
         surface_temperature_C: metrics.tempC,
         precipitation_mm: metrics.rainMm,
+        soil_moisture_pct: metrics.soilMoisture,
+        solar_radiation_wm2: metrics.solarRadiation,
+        cloud_cover_pct: metrics.cloudCover,
+        vapor_pressure_deficit_kpa: metrics.vpd,
         specific_humidity_gkg: metrics.humidity,
         wind_speed_kmh: metrics.windKmh,
         surface_pressure_hpa: metrics.pressure,

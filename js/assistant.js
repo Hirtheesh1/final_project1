@@ -94,6 +94,13 @@ const AssistantPanel = {
 • <strong>Coordinates</strong>: 11.2758° N, 77.5827° E (Erode District, Tamil Nadu)<br>
 • <strong>Predictions & Climate Twin</strong>: Select Perundurai in the <strong>AI Predictions</strong> tab for 7-day synoptic forecasts, or switch to the <strong>Location Twin Predictor</strong> in the <strong>Climate Twin</strong> tab to run PINN-FFNO surrogate microclimate simulations (SIPCOT industrial dispersion, heat stress, and flood/drought risk)!`;
     }
+    if (text.includes('scenario') || text.includes('simulation') || text.includes('variable')) {
+      return `🔬 <strong>Digital Twin Simulation & Scenarios:</strong><br><br>
+• <strong>Data Variables (9 physical fields)</strong>: Surface Temperature, Rainfall, Soil Moisture (%), Solar Radiation (W/m²), Cloud Cover (%), Vapor Pressure Deficit (kPa), Specific Humidity, Wind Velocity, and Surface Pressure.<br>
+• <strong>Scenario Forcing Controls</strong>: Indian Ocean Heat Content (IOHC), Greenspace Index (NDVI), Aerosol Load, ENSO / Indian Ocean Dipole (IOD), Urban Heat Island Sprawl, and GHG Radiative Forcing (ΔF).<br>
+• <strong>Preset Scenarios</strong>: SSP2-4.5 Baseline, +1.5°C Paris Stabilization, Super El Niño, Intense La Niña Surge, High Fossil SSP5, Green Net-Zero COP30, Deccan/Kongu Megadrought, and Super-Cyclone Season!<br><br>
+Explore these interactively in the <strong>Simulation</strong> and <strong>Climate Twin</strong> tabs!`;
+    }
     if (text.includes('weather') || text.includes('temperature') || text.includes('temp') || text.includes('current'))
       return this.responses.weather;
     if (text.includes('flood') || text.includes('water level') || text.includes('river'))
